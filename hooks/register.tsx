@@ -7,17 +7,54 @@ const windows = atom({ plugin: 'usage-bar', key: 'windows' } as const, [] as Win
 const meta = atom({ plugin: 'usage-bar', key: 'meta' } as const, {} as Meta)
 
 const STORE_KEY = 'lastWindows'
-const LABELS: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: '$' }
+const LABELS: Record<string, string> = { five_hour: '5H', seven_day: '7D', spend_limit: '$' }
 const WINDOW_MS: Record<string, number> = { five_hour: 5 * 3600_000, seven_day: 7 * 86400_000 }
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const FILL = '━'
-const TRACK = '─'
-const MARK = '┃'
-const SEP = '  │  '
+
+// Bar cells: filled and empty segments, and the "now" cell.
+const ON = '▰'
+const OFF = '▱'
+
+// Palette: mid-tone colors that read on light and dark backgrounds alike.
+const C = {
+  green: '#3fb950',
+  lime: '#8cc83c',
+  amber: '#d29922',
+  orange: '#e8743b',
+  red: '#f0524f',
+  blue: '#4c9cf5',
+  violet: '#a371f7',
+  track: '#8b949e',
+}
+const STOPS: [number, string][] = [
+  [0, C.green],
+  [0.45, C.lime],
+  [0.65, C.amber],
+  [0.82, C.orange],
+  [1, C.red],
+]
+
+const hex = (c: string) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))
+const toHex = (rgb: number[]) => `#${rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('')}`
+
+// Heat color for a fraction 0–1: green, through amber, to red.
+function heat(f: number): string {
+  const x = Math.max(0, Math.min(1, f))
+  for (let i = 1; i < STOPS.length; i++) {
+    const [p1, c1] = STOPS[i]!
+    const [p0, c0] = STOPS[i - 1]!
+    if (x <= p1) {
+      const t = (x - p0) / (p1 - p0 || 1)
+      const a = hex(c0)
+      const b = hex(c1)
+      return toHex(a.map((v, k) => v + ((b[k] ?? v) - v) * t))
+    }
+  }
+  return C.red
+}
 
 const label = (w: Window) => LABELS[w.kind] ?? w.kind
 const formatPct = (n: number) => `${n < 10 && n % 1 !== 0 ? n.toFixed(1) : Math.round(n)}%`
-const colorFor = (pct: number) => (pct >= 90 ? 'error' : pct >= 70 ? 'warning' : 'claude')
 
 // How far through the window we are, 0–100, when its length is known.
 function elapsedPct(w: Window, now: number): number | null {
@@ -47,7 +84,7 @@ function clockAt(ms: number, now: number): string {
 
 // Usage against time elapsed; when ahead, when the limit would be hit at this rate.
 function pace(w: Window, now: number): { text: string; color: string } | null {
-  if (w.percentUsed >= 100) return { text: 'limit reached', color: 'error' }
+  if (w.percentUsed >= 100) return { text: '● limit reached', color: C.red }
   const elapsed = elapsedPct(w, now)
   const len = WINDOW_MS[w.kind]
   if (elapsed === null || !len || !w.resetsAt) return null
@@ -57,12 +94,12 @@ function pace(w: Window, now: number): { text: string; color: string } | null {
     const rate = w.percentUsed / (now - start)
     const hitAt = now + (100 - w.percentUsed) / rate
     if (hitAt < Date.parse(w.resetsAt)) {
-      return { text: `out ~${clockAt(hitAt, now)}`, color: diff > 25 ? 'error' : 'warning' }
+      return { text: `▲ out ~${clockAt(hitAt, now)}`, color: diff > 25 ? C.red : C.orange }
     }
-    return { text: 'ahead of pace', color: 'warning' }
+    return { text: '▲ ahead of pace', color: C.amber }
   }
-  if (diff < -15) return { text: 'plenty left', color: 'success' }
-  return { text: 'on pace', color: 'subtle' }
+  if (diff < -15) return { text: '● plenty left', color: C.green }
+  return { text: '● on pace', color: C.blue }
 }
 
 function resetText(w: Window, now: number): string {
@@ -113,7 +150,6 @@ export const register: Register = on => {
 
     const rows = ws.map(w => ({
       w,
-      color: colorFor(w.percentUsed),
       head: `${label(w)} `,
       pct: ` ${formatPct(w.percentUsed)}`,
       reset: resetText(w, now),
@@ -123,63 +159,46 @@ export const register: Register = on => {
 
     const extras: { text: string; color: string }[] = []
     if (typeof m.contextPct === 'number') {
-      extras.push({ text: `ctx ${Math.round(m.contextPct)}%`, color: m.contextPct >= 80 ? 'warning' : 'subtle' })
+      extras.push({ text: `◔ ctx ${Math.round(m.contextPct)}%`, color: heat(m.contextPct / 100) })
     }
-    if (typeof m.usd === 'number' && m.usd > 0) extras.push({ text: `$${m.usd.toFixed(2)}`, color: 'subtle' })
-    const extrasText = extras.map(x => x.text).join('  ')
+    if (typeof m.usd === 'number' && m.usd > 0) extras.push({ text: `$${m.usd.toFixed(2)}`, color: C.violet })
+    const extrasLen = extras.reduce((n, x) => n + x.text.length + 2, 0)
 
+    const SEP = '   '
     // Whatever the text leaves goes to the bars, shared evenly.
     const textLen = rows.reduce(
       (n, r) => n + r.head.length + r.pct.length + (r.reset ? r.reset.length + 2 : 0) + (r.pace ? r.pace.text.length + 2 : 0),
       0,
     )
-    const fixed = textLen + SEP.length * (rows.length - 1) + (extrasText ? SEP.length + extrasText.length : 0) + 2
-    const barCells = Math.max(6, Math.min(40, Math.floor((cols - fixed) / rows.length)))
+    const fixed = textLen + SEP.length * (rows.length - 1) + extrasLen + 4
+    const cells = Math.max(8, Math.min(30, Math.floor((cols - fixed) / rows.length)))
 
     return (
       <Box flexDirection="row" width={cols} paddingX={1} justifyContent="space-between" overflow="hidden">
         <Box flexDirection="row">
           {rows.map((r, i) => {
-            const pct = Math.max(0, Math.min(100, r.w.percentUsed))
-            const filled = Math.round((pct / 100) * barCells)
-            const mark = r.elapsed === null ? -1 : Math.min(barCells - 1, Math.floor((r.elapsed / 100) * barCells))
-            const before = mark >= 0 && mark < filled ? FILL.repeat(mark) : FILL.repeat(filled)
-            const fillAfterMark = mark >= 0 && mark < filled ? FILL.repeat(filled - mark - 1) : ''
-            const trackBefore = mark >= filled ? TRACK.repeat(mark - filled) : ''
-            const trackAfter = mark >= filled ? TRACK.repeat(barCells - mark - 1) : TRACK.repeat(barCells - filled)
+            const used = Math.max(0, Math.min(100, r.w.percentUsed))
+            const filled = Math.round((used / 100) * cells)
+            const nowCell = r.elapsed === null ? -1 : Math.min(cells - 1, Math.floor((r.elapsed / 100) * cells))
+            const tone = heat(used / 100)
             return (
               <Box key={r.w.kind} flexDirection="row">
-                {i > 0 ? (
-                  <Text color="subtle" size="caption">
-                    {SEP}
-                  </Text>
-                ) : null}
-                <Text size="caption" weight="semibold" dimColor>
+                {i > 0 ? <Text size="caption">{SEP}</Text> : null}
+                <Text size="caption" weight="bold" color={C.blue}>
                   {r.head}
                 </Text>
-                <Text color={r.color} size="caption">
-                  {before}
-                </Text>
-                {mark >= 0 && mark < filled ? (
-                  <Text color="text" size="caption">
-                    {MARK}
-                  </Text>
-                ) : null}
-                <Text color={r.color} size="caption">
-                  {fillAfterMark}
-                </Text>
-                <Text color="subtle" size="caption">
-                  {trackBefore}
-                </Text>
-                {mark >= filled ? (
-                  <Text color="text" size="caption">
-                    {MARK}
-                  </Text>
-                ) : null}
-                <Text color="subtle" size="caption">
-                  {trackAfter}
-                </Text>
-                <Text color={r.color} bold size="caption" tabular>
+                {Array.from({ length: cells }, (_, c) => {
+                  const isOn = c < filled
+                  const isNow = c === nowCell
+                  // Filled cells take the heat color of their own position; the "now" cell is blue.
+                  const color = isNow ? C.blue : isOn ? heat((c + 0.5) / cells) : C.track
+                  return (
+                    <Text key={`c${c}`} size="caption" tabular color={color} dimColor={!isOn && !isNow}>
+                      {isOn || isNow ? ON : OFF}
+                    </Text>
+                  )
+                })}
+                <Text color={tone} bold size="caption" tabular>
                   {r.pct}
                 </Text>
                 {r.reset ? (

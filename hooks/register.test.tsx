@@ -28,12 +28,12 @@ test('the band shows the 5-hour and 7-day windows on every surface', async ($, o
 
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface } as never)
-    expect((await ui.find({ type: 'Text', text: '5h ' }))?.text).toBe('5h ')
+    expect((await ui.find({ type: 'Text', text: '5H ' }))?.text).toBe('5H ')
     expect((await ui.find({ type: 'Text', text: / 43%$/ }))?.text).toBe(' 43%')
     expect((await ui.find({ type: 'Text', text: / 91%$/ }))?.text).toBe(' 91%')
     expect((await ui.find({ type: 'Text', text: /↻ 2h 0m/ }))?.text).toMatch(/^  ↻ 2h 0m · /)
-    expect((await ui.find({ type: 'Text', text: 'plenty left', exact: false } as never))?.text).toBe('  plenty left')
-    expect((await ui.find({ type: 'Text', text: 'ctx 34%' }))?.text).toBe('ctx 34%')
+    expect((await ui.find({ type: 'Text', text: /plenty left/ }))?.text).toBe('  ● plenty left')
+    expect((await ui.find({ type: 'Text', text: /ctx 34%/ }))?.text).toBe('◔ ctx 34%')
     expect((await ui.find({ type: 'Text', text: '$1.50' }))?.text).toBe('$1.50')
     await ui.unmount()
   }
