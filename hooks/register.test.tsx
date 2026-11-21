@@ -11,7 +11,8 @@ test('the band shows the 5-hour and 7-day windows on every surface', async ($, o
   on('session.usage', () => ({
     value: {
       startedAt: 0,
-      context: {} as never,
+      context: { window: 200000, percent: 34 } as never,
+      cost: { usd: 1.5 },
       rateLimits: [
         { kind: 'five_hour', percentUsed: 42.5, resetsAt: '2099-01-01T00:00:00Z' },
         { kind: 'seven_day', percentUsed: 91 },
@@ -27,10 +28,13 @@ test('the band shows the 5-hour and 7-day windows on every surface', async ($, o
 
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface } as never)
-    expect((await ui.find({ type: 'Text', text: '5h' }))?.text).toBe('5h')
-    expect((await ui.find({ type: 'Text', text: /^43%$/ }))?.text).toBe('43%')
-    expect((await ui.find({ type: 'Text', text: /^91%$/ }))?.text).toBe('91%')
-    expect((await ui.find({ type: 'Text', text: '2h 0m' }))?.text).toBe('2h 0m')
+    expect((await ui.find({ type: 'Text', text: '5h ' }))?.text).toBe('5h ')
+    expect((await ui.find({ type: 'Text', text: / 43%$/ }))?.text).toBe(' 43%')
+    expect((await ui.find({ type: 'Text', text: / 91%$/ }))?.text).toBe(' 91%')
+    expect((await ui.find({ type: 'Text', text: /↻ 2h 0m/ }))?.text).toMatch(/^  ↻ 2h 0m · /)
+    expect((await ui.find({ type: 'Text', text: 'plenty left', exact: false } as never))?.text).toBe('  plenty left')
+    expect((await ui.find({ type: 'Text', text: 'ctx 34%' }))?.text).toBe('ctx 34%')
+    expect((await ui.find({ type: 'Text', text: '$1.50' }))?.text).toBe('$1.50')
     await ui.unmount()
   }
 })

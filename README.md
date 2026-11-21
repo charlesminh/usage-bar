@@ -1,6 +1,6 @@
 # usage-bar
 
-A Claude Code mod that shows your plan's 5-hour and weekly usage as bars above the prompt box, with reset times and a pace hint, plus a compact status-line entry.
+A Claude Code mod that draws one thin, full-width line above the prompt: 5-hour and weekly usage bars with a time-elapsed marker, reset countdown and clock time, a pace hint (on pace, plenty left, or when you would run out), plus context fill and session cost.
 
 ## Install
 
