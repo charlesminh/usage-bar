@@ -1,1 +1,1 @@
-{ "name": "usage-bar", "version": "0.1.0", "description": "Shows your plan's 5-hour and 7-day usage as bars above the prompt and in the status line", "types": "./types/index.d.ts" }
+{ "name": "usage-bar", "version": "0.2.0", "description": "Shows your plan's 5-hour and 7-day usage as bars above the prompt and in the status line", "types": "./types/index.d.ts" }
